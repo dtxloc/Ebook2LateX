@@ -9,12 +9,13 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-Base = declarative_base()
+from .database import Base
 
 
 class User(Base):
@@ -30,6 +31,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     documents = relationship("Document", back_populates="owner")
+    favorites = relationship("UserFavorite", back_populates="user", cascade="all, delete-orphan")
 
 
 class Document(Base):
@@ -41,6 +43,7 @@ class Document(Base):
     file_path_url = Column(Text, nullable=False)
     upload_date = Column(DateTime(timezone=True), server_default=func.now())
     status = Column(String(50), default="Pending")
+    version = Column(Integer, nullable=False, default=1, server_default="1")
 
     owner = relationship("User", back_populates="documents")
     formulas = relationship(
@@ -65,6 +68,9 @@ class FormulaEntry(Base):
 
     document = relationship("Document", back_populates="formulas")
     logs = relationship("Log", back_populates="formula", cascade="all, delete-orphan")
+    favorited_by = relationship(
+        "UserFavorite", back_populates="formula", cascade="all, delete-orphan"
+    )
 
 
 class Log(Base):
@@ -80,3 +86,22 @@ class Log(Base):
     environment_info = Column(JSONB)
 
     formula = relationship("FormulaEntry", back_populates="logs")
+
+
+class UserFavorite(Base):
+    __tablename__ = "user_favorites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "formula_id", name="uq_user_favorites_user_formula"),
+    )
+
+    favorite_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    formula_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("formula_entries.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="favorites")
+    formula = relationship("FormulaEntry", back_populates="favorited_by")
